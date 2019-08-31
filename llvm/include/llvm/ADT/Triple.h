@@ -48,6 +48,7 @@ public:
 
     arm,            // ARM (little endian): arm, armv.*, xscale
     armeb,          // ARM (big endian): armeb
+    alveo,          // FPGA: Xilinx Alveo U200/U250
     aarch64,        // AArch64 (little endian): aarch64
     aarch64_be,     // AArch64 (big endian): aarch64_be
     arc,            // ARC: Synopsys ARC
@@ -654,6 +655,16 @@ public:
     return getEnvironment() == Triple::Musl ||
            getEnvironment() == Triple::MuslEABI ||
            getEnvironment() == Triple::MuslEABIHF;
+  }
+
+  /// Tests whether the target is FPGA - Xilinx Alveo U200/U250.
+  bool isAlveo() const {
+    return getArch() == Triple::alveo;
+  }
+
+  /// Tests whether the target is FPGA.
+  bool isFPGA() const {
+    return getArch() == Triple::alveo;
   }
 
   /// Tests whether the target is NVPTX (32- or 64-bit).
