@@ -25,6 +25,8 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/ValueHandle.h"
 
+#include <queue>
+
 namespace llvm {
 class ArrayType;
 class Constant;
@@ -387,6 +389,10 @@ private:
   ///  kmp_int64 st; // stride
   /// };
   QualType KmpDimTy;
+  /// \brief Type struct __tgt_configuration{
+  ///   int32_t  sub_target_id;  // sub_target id.
+  /// };
+  QualType TgtConfigurationQTy;
   /// Type struct __tgt_offload_entry{
   ///   void      *addr;       // Pointer to the offload entry info.
   ///                          // (function or global)
@@ -415,6 +421,10 @@ private:
   ///                                         // entries (non inclusive).
   /// };
   QualType TgtBinaryDescriptorQTy;
+  /// \brief Target FPGA Module name
+  std::queue<std::string> TgtFPGAModule;
+  /// \brief Target Check Flags int32_t
+  std::queue<int32_t> TgtCheckFlags;
   /// Entity that registers the offloading constants that were emitted so
   /// far.
   class OffloadEntriesInfoManagerTy {
@@ -644,9 +654,14 @@ private:
   /// along with the associated metadata.
   void createOffloadEntriesAndInfoMetadata();
 
+  void createOffloadConfiguration();
+
   /// Loads all the offload entries information from the host IR
   /// metadata.
   void loadOffloadInfoMetadata();
+
+  /// \brief Returns __tgt_configuration type.
+  QualType getTgtConfigurationyQTy();
 
   /// Returns __tgt_offload_entry type.
   QualType getTgtOffloadEntryQTy();
@@ -762,6 +777,9 @@ public:
       : CGOpenMPRuntime(CGM, ".", ".") {}
   virtual ~CGOpenMPRuntime() {}
   virtual void clear();
+
+  /// Create the FPGA offloading info for the current context.
+  virtual void createFPGAInfo(const OMPExecutableDirective &S);
 
   /// Get the platform-specific name separator.
   std::string getName(ArrayRef<StringRef> Parts) const;

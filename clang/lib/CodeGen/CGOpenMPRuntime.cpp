@@ -3904,12 +3904,85 @@ CGOpenMPRuntime::createOffloadingBinaryDescriptorRegistration() {
   return RegFn;
 }
 
+void CGOpenMPRuntime::createOffloadConfiguration() {
+  int32_t sub_target_id;
+  auto *TgtConfigurationType = cast<llvm::StructType>(
+      CGM.getTypes().ConvertTypeForMem(getTgtConfigurationyQTy()));
+
+  // If we do not have entries, we dont need to do anything.
+  if (OffloadEntriesInfoManager.empty())
+    return;
+
+  if (!CGM.getLangOpts().OpenMPIsDevice)
+    return;
+
+  // Decide linkage type of the entry struct by looking at the linkage type of
+  // the variable. By default the linkage is Link-Once.
+  auto EntryLinkage = llvm::GlobalValue::WeakAnyLinkage;
+
+  // We can't have any padding between symbols, so we need to have 1-byte
+  // alignment.
+  auto Align = CharUnits::fromQuantity(1);
+
+  auto &Triple = CGM.getTarget().getTargetOpts().Triple;
+
+  if (Triple == "smartnic") {
+    sub_target_id = 9001;
+  } else if (Triple == "harp") {
+    sub_target_id = 9002;
+  } else if (Triple == "harpsim") {
+    sub_target_id = 9006;
+  } else if (Triple == "awsf1") {
+    sub_target_id = 9007;
+  } else if (Triple == "alveo") {
+    sub_target_id = 9010;
+  } else {
+    return;
+  }
+
+  ConstantInitBuilder EntryBuilder(CGM);
+  auto EntryInit = EntryBuilder.beginStruct(TgtConfigurationType);
+  EntryInit.addInt(CGM.Int32Ty, sub_target_id);
+  SmallString<128> EntryGblName(".omp_offloading.configuration.var");
+  llvm::GlobalVariable *Entry =
+      EntryInit.finishAndCreateGlobal(EntryGblName, Align,
+                                      /*constant*/ true, EntryLinkage);
+  Entry->setSection(".omp_offloading.configuration");
+}
+
 void CGOpenMPRuntime::createOffloadEntry(
     llvm::Constant *ID, llvm::Constant *Addr, uint64_t Size, int32_t Flags,
     llvm::GlobalValue::LinkageTypes Linkage) {
   StringRef Name = Addr->getName();
   llvm::Module &M = CGM.getModule();
   llvm::LLVMContext &C = M.getContext();
+
+  // Create constant string with the module.
+  std::string str_module;
+
+  if (!this->TgtFPGAModule.empty()) {
+    str_module = this->TgtFPGAModule.front();
+    this->TgtFPGAModule.pop();
+  }
+
+  llvm::Constant *StrPtrModuleInit =
+      llvm::ConstantDataArray::getString(C, str_module);
+
+  llvm::GlobalVariable *StrModule =
+      new llvm::GlobalVariable(M, StrPtrModuleInit->getType(), /*isConstant=*/true,
+                               llvm::GlobalValue::InternalLinkage, StrPtrModuleInit,
+                               ".omp_offloading.entry_module");
+  StrModule->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+  llvm::Constant *StrModulePtr =
+      llvm::ConstantExpr::getBitCast(StrModule, CGM.Int8PtrTy);
+
+  // Create int32_t check flags.
+  int32_t CheckFlags = 0;
+
+  if (!this->TgtCheckFlags.empty()) {
+    CheckFlags = this->TgtCheckFlags.front();
+    this->TgtCheckFlags.pop();
+  }
 
   // Create constant string with the name.
   llvm::Constant *StrPtrInit = llvm::ConstantDataArray::getString(C, Name);
@@ -3922,7 +3995,9 @@ void CGOpenMPRuntime::createOffloadEntry(
 
   llvm::Constant *Data[] = {llvm::ConstantExpr::getBitCast(ID, CGM.VoidPtrTy),
                             llvm::ConstantExpr::getBitCast(Str, CGM.Int8PtrTy),
+                            llvm::ConstantExpr::getBitCast(StrModulePtr, CGM.Int8PtrTy),
                             llvm::ConstantInt::get(CGM.SizeTy, Size),
+                            llvm::ConstantInt::get(CGM.Int32Ty, CheckFlags),
                             llvm::ConstantInt::get(CGM.Int32Ty, Flags),
                             llvm::ConstantInt::get(CGM.Int32Ty, 0)};
   std::string EntryName = getName({"omp_offloading", "entry", ""});
@@ -4171,6 +4246,25 @@ void CGOpenMPRuntime::emitKmpRoutineEntryT(QualType KmpInt32Ty) {
   }
 }
 
+QualType CGOpenMPRuntime::getTgtConfigurationyQTy() {
+  // Make sure the type of the entry is already created. This is the type we
+  // have to create:
+  // struct __tgt_configuration{
+  //   int32_t  sub_target_id;  // sub_target id.
+  //   char    *module;         // FPGA module name.
+  // };
+  if (TgtConfigurationQTy.isNull()) {
+    ASTContext &C = CGM.getContext();
+    auto *RD = C.buildImplicitRecord("__tgt_configuration");
+    RD->startDefinition();
+    addFieldToRecordDecl(
+        C, RD, C.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/true));
+    RD->completeDefinition();
+    TgtConfigurationQTy = C.getRecordType(RD);
+  }
+  return TgtConfigurationQTy;
+}
+
 QualType CGOpenMPRuntime::getTgtOffloadEntryQTy() {
   // Make sure the type of the entry is already created. This is the type we
   // have to create:
@@ -4178,7 +4272,9 @@ QualType CGOpenMPRuntime::getTgtOffloadEntryQTy() {
   //   void      *addr;       // Pointer to the offload entry info.
   //                          // (function or global)
   //   char      *name;       // Name of the function or global.
+  //   char      *module;
   //   size_t     size;       // Size of the entry info (0 if it a function).
+  //   int32_t    check_flags;
   //   int32_t    flags;      // Flags associated with the entry, e.g. 'link'.
   //   int32_t    reserved;   // Reserved, to use by the runtime library.
   // };
@@ -4188,7 +4284,10 @@ QualType CGOpenMPRuntime::getTgtOffloadEntryQTy() {
     RD->startDefinition();
     addFieldToRecordDecl(C, RD, C.VoidPtrTy);
     addFieldToRecordDecl(C, RD, C.getPointerType(C.CharTy));
+    // addFieldToRecordDecl(C, RD, C.getPointerType(C.CharTy));
     addFieldToRecordDecl(C, RD, C.getSizeType());
+    // addFieldToRecordDecl(
+    //     C, RD, C.getIntTypeForBitwidth(#<{(|DestWidth=|)}>#32, #<{(|Signed=|)}>#true));
     addFieldToRecordDecl(
         C, RD, C.getIntTypeForBitwidth(/*DestWidth=*/32, /*Signed=*/true));
     addFieldToRecordDecl(
@@ -8823,6 +8922,8 @@ bool CGOpenMPRuntime::markAsGlobalTarget(GlobalDecl GD) {
 }
 
 llvm::Function *CGOpenMPRuntime::emitRegistrationFunction() {
+  createOffloadConfiguration();
+
   // If we have offloading in the current module, we need to emit the entries
   // now and register the offloading descriptor.
   createOffloadEntriesAndInfoMetadata();
@@ -9858,3 +9959,16 @@ CGOpenMPSIMDRuntime::getParameterAddress(CodeGenFunction &CGF,
   llvm_unreachable("Not supported in SIMD-only mode");
 }
 
+void CGOpenMPRuntime::createFPGAInfo(const OMPExecutableDirective &S) {
+
+  // check if is an FPGA device
+  auto &Triple = CGM.getTarget().getTargetOpts().Triple;
+  if ((Triple != "alveo")) {
+    return;
+  }
+
+  const OMPImplementsClause *c_implements = S.getSingleClause<OMPImplementsClause>();
+  if (c_implements) {
+    this->TgtFPGAModule.push(c_implements->getImplementsNameInfo());
+  }
+}

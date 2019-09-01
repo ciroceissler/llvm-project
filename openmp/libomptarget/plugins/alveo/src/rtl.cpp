@@ -1,4 +1,4 @@
-//===-RTLs/generic-64bit/src/rtl.cpp - Target RTLs Implementation - C++ -*-===//
+//===----RTLs/alveo/src/rtl.cpp - Target RTLs Implementation ------ C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,51 +7,70 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// RTL for generic 64-bit machine
+// RTL for ALVEO machine
 //
 //===----------------------------------------------------------------------===//
 
 #include <cassert>
-#include <cstdio>
-#include <cstring>
-#include <cstdlib>
-#include <dlfcn.h>
-#include <ffi.h>
-#include <gelf.h>
-#include <link.h>
+#include <cstddef>
 #include <list>
 #include <string>
 #include <vector>
+#include <ffi.h>
+#include <gelf.h>
+#include <link.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <sys/time.h>
 
-#include "omptargetplugin.h"
+#include "util/alveo_generic_app.h"
+
+#include "omptarget.h"
 
 #ifndef TARGET_NAME
-#define TARGET_NAME Generic ELF - 64bit
+#define TARGET_NAME ALVEO
 #endif
-
-#ifndef TARGET_ELF_ID
-#define TARGET_ELF_ID 0
-#endif
-
-#ifdef OMPTARGET_DEBUG
-static int DebugLevel = 0;
 
 #define GETNAME2(name) #name
 #define GETNAME(name) GETNAME2(name)
-#define DP(...) \
-  do { \
-    if (DebugLevel > 0) { \
-      DEBUGP("Target " GETNAME(TARGET_NAME) " RTL", __VA_ARGS__); \
-    } \
-  } while (false)
-#else // OMPTARGET_DEBUG
-#define DP(...) {}
-#endif // OMPTARGET_DEBUG
+#define DP(...) DEBUGP("Target " GETNAME(TARGET_NAME) " RTL", __VA_ARGS__)
 
 #include "../../common/elf_common.c"
 
-#define NUMBER_OF_DEVICES 4
+#define NUMBER_OF_DEVICES 1
 #define OFFLOADSECTIONNAME ".omp_offloading.entries"
+
+// Utility for retrieving and printing ALVEO error string.
+#ifdef ALVEO_ERROR_REPORT
+#define ALVEO_ERR_STRING(err)                                              \
+  do {                                                                     \
+    const char *errStr;                                                    \
+    cuGetErrorString(err, &errStr);                                        \
+    DP("ALVEO error is: %s\n", errStr);                                    \
+  } while (0)
+#else
+#define ALVEO_ERR_STRING(err)                                              \
+  {}
+#endif
+
+#ifdef OMPTARGET_DEBUG
+  #define TIME_START     t_start = rtclock();
+  #define TIME_PRINT(x)  t_end = rtclock(); printf("[time][alveo] %s = %0.6lfs\n", x, t_end - t_start);
+  double rtclock() {
+    struct timezone Tzp;
+    struct timeval Tp;
+    int stat;
+    stat = gettimeofday (&Tp, &Tzp);
+    if (stat != 0) printf("Error return from gettimeofday: %d",stat);
+    return(Tp.tv_sec + Tp.tv_usec*1.0e-6);
+  }
+
+  double t_start, t_end;
+#else
+  #define TIME_START
+  #define TIME_PRINT(x)
+#endif  //  OMPTARGET_DEBUG
 
 /// Array of Dynamic libraries loaded for this target.
 struct DynLibTy {
@@ -66,9 +85,10 @@ struct FuncOrGblEntryTy {
 
 /// Class containing all the device information.
 class RTLDeviceInfoTy {
-  std::vector<std::list<FuncOrGblEntryTy>> FuncGblEntries;
+  std::vector<FuncOrGblEntryTy> FuncGblEntries;
 
 public:
+
   std::list<DynLibTy> DynLibs;
 
   // Record entry point associated with device.
@@ -76,8 +96,7 @@ public:
                           __tgt_offload_entry *end) {
     assert(device_id < (int32_t)FuncGblEntries.size() &&
            "Unexpected device id!");
-    FuncGblEntries[device_id].emplace_back();
-    FuncOrGblEntryTy &E = FuncGblEntries[device_id].back();
+    FuncOrGblEntryTy &E = FuncGblEntries[device_id];
 
     E.Table.EntriesBegin = begin;
     E.Table.EntriesEnd = end;
@@ -87,7 +106,7 @@ public:
   bool findOffloadEntry(int32_t device_id, void *addr) {
     assert(device_id < (int32_t)FuncGblEntries.size() &&
            "Unexpected device id!");
-    FuncOrGblEntryTy &E = FuncGblEntries[device_id].back();
+    FuncOrGblEntryTy &E = FuncGblEntries[device_id];
 
     for (__tgt_offload_entry *i = E.Table.EntriesBegin, *e = E.Table.EntriesEnd;
          i < e; ++i) {
@@ -102,20 +121,12 @@ public:
   __tgt_target_table *getOffloadEntriesTable(int32_t device_id) {
     assert(device_id < (int32_t)FuncGblEntries.size() &&
            "Unexpected device id!");
-    FuncOrGblEntryTy &E = FuncGblEntries[device_id].back();
+    FuncOrGblEntryTy &E = FuncGblEntries[device_id];
 
     return &E.Table;
   }
 
-  RTLDeviceInfoTy(int32_t num_devices) {
-#ifdef OMPTARGET_DEBUG
-    if (char *envStr = getenv("LIBOMPTARGET_DEBUG")) {
-      DebugLevel = std::stoi(envStr);
-    }
-#endif // OMPTARGET_DEBUG
-
-    FuncGblEntries.resize(num_devices);
-  }
+  RTLDeviceInfoTy(int32_t num_devices) { FuncGblEntries.resize(num_devices); }
 
   ~RTLDeviceInfoTy() {
     // Close dynamic libraries
@@ -129,23 +140,47 @@ public:
 };
 
 static RTLDeviceInfoTy DeviceInfo(NUMBER_OF_DEVICES);
+static AlveoGenericApp alveo_generic_app;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-int32_t __tgt_rtl_is_valid_binary(__tgt_device_image *image) {
-// If we don't have a valid ELF ID we can just fail.
-#if TARGET_ELF_ID < 1
-  return 0;
-#else
-  return elf_check_machine(image, TARGET_ELF_ID, 0);
-#endif
+int32_t __tgt_rtl_set_module(void* module) {
+
+  std::string module_str((char*) module);
+
+  DP("[alveo] module = %s\n", module_str.c_str());
+
+  TIME_START
+  if (0 != alveo_generic_app.program(module_str.c_str()))
+      return OFFLOAD_FAIL;
+  TIME_PRINT("program")
+
+  DP("[alveo] __tgt_rtl_set_module success\n");
+
+  return OFFLOAD_SUCCESS;
 }
 
-int32_t __tgt_rtl_number_of_devices() { return NUMBER_OF_DEVICES; }
+int32_t __tgt_rtl_is_valid_binary(__tgt_device_image *image) {
+  uint32_t is_valid_binary = elf_check_machine(image, EM_X86_64, 9010);
 
-int32_t __tgt_rtl_init_device(int32_t device_id) { return OFFLOAD_SUCCESS; }
+  DP("[alveo] __tgt_rtl_is_valid_binary\n");
+
+  return is_valid_binary;
+}
+
+int32_t __tgt_rtl_number_of_devices() {
+  return NUMBER_OF_DEVICES;
+}
+
+int32_t __tgt_rtl_init_device(int32_t device_id) {
+
+  DP("[alveo] __tgt_rtl_init_device\n");
+  alveo_generic_app.init();
+
+  return OFFLOAD_SUCCESS;
+}
 
 __tgt_target_table *__tgt_rtl_load_binary(int32_t device_id,
                                           __tgt_device_image *image) {
@@ -214,7 +249,8 @@ __tgt_target_table *__tgt_rtl_load_binary(int32_t device_id,
   //
   // 1) Create tmp file with the library contents.
   // 2) Use dlopen to load the file and dlsym to retrieve the symbols.
-  char tmp_name[] = "/tmp/tmpfile_XXXXXX";
+  mkdir(".tmp", 0777);
+  char tmp_name[] = ".tmp/tmpfile_XXXXXX";
   int tmp_fd = mkstemp(tmp_name);
 
   if (tmp_fd == -1) {
@@ -272,67 +308,78 @@ __tgt_target_table *__tgt_rtl_load_binary(int32_t device_id,
   return DeviceInfo.getOffloadEntriesTable(device_id);
 }
 
-void *__tgt_rtl_data_alloc(int32_t device_id, int64_t size, void *hst_ptr) {
-  void *ptr = malloc(size);
+void *__tgt_rtl_data_alloc(int32_t device_id, int64_t size) {
+  DP("[alveo] __tgt_rtl_data_alloc\n");
+
+  TIME_START
+  void *ptr = alveo_generic_app.alloc_buffer(size);
+  TIME_PRINT("alloc")
+
+  DP("[alveo] size = %d\n", size);
+
+  if (ptr == NULL)
+    DP("[alveo] ptr null\n");
+
   return ptr;
 }
 
 int32_t __tgt_rtl_data_submit(int32_t device_id, void *tgt_ptr, void *hst_ptr,
-                              int64_t size) {
-  memcpy(tgt_ptr, hst_ptr, size);
+    int64_t size) {
+
+  DP("[alveo] __tgt_rtl_data_submit\n");
+
+  TIME_START
+
+  alveo_generic_app.submit_buffer(tgt_ptr, hst_ptr, size);
+
+  TIME_PRINT("submit")
+
   return OFFLOAD_SUCCESS;
 }
 
 int32_t __tgt_rtl_data_retrieve(int32_t device_id, void *hst_ptr, void *tgt_ptr,
-                                int64_t size) {
-  memcpy(hst_ptr, tgt_ptr, size);
+    int64_t size) {
+
+  DP("[alveo] __tgt_rtl_data_retrieve\n");
+
+  TIME_START
+  alveo_generic_app.retrieve_buffer(    hst_ptr, tgt_ptr, size);
+  TIME_PRINT("retrieve")
+
   return OFFLOAD_SUCCESS;
 }
 
 int32_t __tgt_rtl_data_delete(int32_t device_id, void *tgt_ptr) {
-  free(tgt_ptr);
+
+  DP("[alveo] __tgt_rtl_delete\n");
+
+  TIME_START
+  // alveo_generic_app.delete_buffer(tgt_ptr);
+  TIME_PRINT("delete")
+
   return OFFLOAD_SUCCESS;
 }
 
 int32_t __tgt_rtl_run_target_team_region(int32_t device_id, void *tgt_entry_ptr,
-    void **tgt_args, ptrdiff_t *tgt_offsets, int32_t arg_num, int32_t team_num,
-    int32_t thread_limit, uint64_t loop_tripcount /*not used*/) {
-  // ignore team num and thread limit.
+    void **tgt_args, int32_t arg_num, int32_t team_num, int32_t thread_limit,
+    uint64_t loop_tripcount) {
 
-  // Use libffi to launch execution.
-  ffi_cif cif;
+  DP("[alveo] __tgt_rtl_run_target_team_region\n");
+  TIME_START
+  alveo_generic_app.run();
+  TIME_PRINT("run")
 
-  // All args are references.
-  std::vector<ffi_type *> args_types(arg_num, &ffi_type_pointer);
-  std::vector<void *> args(arg_num);
-  std::vector<void *> ptrs(arg_num);
-
-  for (int32_t i = 0; i < arg_num; ++i) {
-    ptrs[i] = (void *)((intptr_t)tgt_args[i] + tgt_offsets[i]);
-    args[i] = &ptrs[i];
-  }
-
-  ffi_status status = ffi_prep_cif(&cif, FFI_DEFAULT_ABI, arg_num,
-                                   &ffi_type_void, &args_types[0]);
-
-  assert(status == FFI_OK && "Unable to prepare target launch!");
-
-  if (status != FFI_OK)
-    return OFFLOAD_FAIL;
-
-  DP("Running entry point at " DPxMOD "...\n", DPxPTR(tgt_entry_ptr));
-
-  void (*entry)(void);
-  *((void**) &entry) = tgt_entry_ptr;
-  ffi_call(&cif, entry, NULL, &args[0]);
   return OFFLOAD_SUCCESS;
 }
 
 int32_t __tgt_rtl_run_target_region(int32_t device_id, void *tgt_entry_ptr,
-    void **tgt_args, ptrdiff_t *tgt_offsets, int32_t arg_num) {
+    void **tgt_args, int32_t arg_num) {
+
+  DP("[alveo] __tgt_rtl_run_target_region\n");
+
   // use one team and one thread.
   return __tgt_rtl_run_target_team_region(device_id, tgt_entry_ptr, tgt_args,
-      tgt_offsets, arg_num, 1, 1, 0);
+                                          arg_num, 1, 1, 0);
 }
 
 #ifdef __cplusplus

@@ -50,6 +50,9 @@ if(LIBOMPTARGET_CMAKE_BUILD_TYPE MATCHES debug)
   add_definitions(-O0)
 endif()
 
+add_definitions(-g)
+add_definitions(-O0)
+
 include_directories(include)
 
 # Build target agnostic offloading library.

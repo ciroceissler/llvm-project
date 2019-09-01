@@ -61,12 +61,18 @@ enum OpenMPOffloadingDeclareTargetFlags {
   OMP_DECLARE_TARGET_DTOR = 0x04
 };
 
+struct __tgt_configuration {
+  int32_t sub_target_id;
+};
+
 /// This struct is a record of an entry point or global. For a function
 /// entry point the size is expected to be zero
 struct __tgt_offload_entry {
   void *addr;   // Pointer to the offload entry info (function or global)
   char *name;   // Name of the function or global
+  char *module; // Name of the FPGA module if necessary.
   size_t size;  // Size of the entry info (0 if it is a function)
+  int32_t check; // Flags associated with the check feature.
   int32_t flags; // Flags associated with the entry, e.g. 'link'.
   int32_t reserved; // Reserved, to be used by the runtime library.
 };

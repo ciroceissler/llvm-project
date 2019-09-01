@@ -3952,6 +3952,7 @@ static void emitOMPAtomicExpr(CodeGenFunction &CGF, OpenMPClauseKind Kind,
   case OMPC_depend:
   case OMPC_mergeable:
   case OMPC_device:
+  case OMPC_implements:
   case OMPC_threads:
   case OMPC_simd:
   case OMPC_map:
@@ -4016,6 +4017,8 @@ static void emitCommonOMPTargetDirective(CodeGenFunction &CGF,
                                          const RegionCodeGenTy &CodeGen) {
   assert(isOpenMPTargetExecutionDirective(S.getDirectiveKind()));
   CodeGenModule &CGM = CGF.CGM;
+
+  CGM.getOpenMPRuntime().createFPGAInfo(S);
 
   // On device emit this construct as inlined code.
   if (CGM.getLangOpts().OpenMPIsDevice) {
