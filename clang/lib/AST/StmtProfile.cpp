@@ -709,6 +709,8 @@ void OMPClauseProfiler::VisitOMPDeviceClause(const OMPDeviceClause *C) {
   if (C->getDevice())
     Profiler->VisitStmt(C->getDevice());
 }
+void OMPClauseProfiler::VisitOMPImplementsClause(const OMPImplementsClause *C) {
+}
 void OMPClauseProfiler::VisitOMPMapClause(const OMPMapClause *C) {
   VisitOMPClauseList(C);
 }

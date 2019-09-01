@@ -9104,6 +9104,18 @@ public:
       ArrayRef<Expr *> Alignments, ArrayRef<Expr *> Linears,
       ArrayRef<unsigned> LinModifiers, ArrayRef<Expr *> Steps, SourceRange SR);
 
+  OMPClause *ActOnOpenMPAccClause(OpenMPClauseKind Kind,
+                                  llvm::StringRef Info,
+                                  SourceLocation StartLoc,
+                                  SourceLocation LParenLoc,
+                                  SourceLocation EndLoc);
+
+  /// \brief Called on well-formed 'implements' clause.
+  OMPClause *ActOnOpenMPImplementsClause(StringRef NameInfo,
+                                     SourceLocation StartLoc,
+                                     SourceLocation LParenLoc,
+                                     SourceLocation EndLoc);
+
   OMPClause *ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind,
                                          Expr *Expr,
                                          SourceLocation StartLoc,

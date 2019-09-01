@@ -69,6 +69,7 @@ const OMPClauseWithPreInit *OMPClauseWithPreInit::get(const OMPClause *C) {
     return static_cast<const OMPThreadLimitClause *>(C);
   case OMPC_device:
     return static_cast<const OMPDeviceClause *>(C);
+  case OMPC_implements:
   case OMPC_default:
   case OMPC_proc_bind:
   case OMPC_final:
@@ -164,6 +165,7 @@ const OMPClauseWithPostUpdate *OMPClauseWithPostUpdate::get(const OMPClause *C) 
   case OMPC_seq_cst:
   case OMPC_depend:
   case OMPC_device:
+  case OMPC_implements:
   case OMPC_threads:
   case OMPC_simd:
   case OMPC_map:
@@ -1058,6 +1060,12 @@ OMPIsDevicePtrClause *OMPIsDevicePtrClause::CreateEmpty(
 //===----------------------------------------------------------------------===//
 //  OpenMP clauses printing methods
 //===----------------------------------------------------------------------===//
+
+void OMPClausePrinter::VisitOMPImplementsClause(OMPImplementsClause *Node) {
+  OS << "implements(";
+  OS << Node->getImplementsNameInfo();
+  OS << ")";
+}
 
 void OMPClausePrinter::VisitOMPIfClause(OMPIfClause *Node) {
   OS << "if(";

@@ -3483,6 +3483,66 @@ public:
   }
 };
 
+/// This represents 'implements' clause in the '#pragma omp ...'
+/// directive.
+///
+/// \code
+/// #pragma omp target implements(a)
+/// \endcode
+/// In this example directive '#pragma omp target' has clause 'implements'
+/// with single expression 'a'.
+class OMPImplementsClause : public OMPClause {
+  friend class OMPClauseReader;
+
+  /// \brief Location of '('.
+  SourceLocation LParenLoc;
+
+  /// \brief A name of custom operator.
+  std::string NameInfo;
+
+  /// \brief Set the location of '('.
+  void setLParenLoc(SourceLocation Loc) { LParenLoc = Loc; }
+
+  /// \brief Set implements StringRef.
+  void setImplementsNameInfo(std::string S) { NameInfo = S; }
+
+public:
+  /// \brief Build 'implements' clause.
+  ///
+  /// \param StartLoc Starting location of the clause.
+  /// \param LParenLoc Location of '('.
+  /// \param EndLoc Ending location of the clause.
+  /// \param NameInfo Implements custom operator.
+  ///
+  OMPImplementsClause(SourceLocation StartLoc, SourceLocation LParenLoc,
+                  SourceLocation EndLoc, llvm::StringRef NameInfo)
+      : OMPClause(OMPC_implements, StartLoc, EndLoc), LParenLoc(LParenLoc),
+        NameInfo(NameInfo.str()) {}
+
+  /// \brief Build an empty clause.
+  ///
+  explicit OMPImplementsClause()
+      : OMPClause(OMPC_implements, SourceLocation(), SourceLocation()),
+        NameInfo(nullptr) {}
+
+  /// \brief Get name info of the clause.
+  std::string getImplementsNameInfo() { return NameInfo; }
+
+  /// \brief Get name info of the clause.
+  std::string getImplementsNameInfo() const { return NameInfo; }
+
+  /// \brief Get location of '('.
+  SourceLocation getLParenLoc() { return LParenLoc; }
+
+  static bool classof(const OMPClause *T) {
+    return T->getClauseKind() == OMPC_implements;
+  }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+};
+
 /// This represents 'threads' clause in the '#pragma omp ...' directive.
 ///
 /// \code

@@ -2819,6 +2819,31 @@ void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope) {
   }
 }
 
+OMPClause *Sema::ActOnOpenMPAccClause(OpenMPClauseKind Kind,
+                                      llvm::StringRef Info,
+                                      SourceLocation StartLoc,
+                                      SourceLocation LParenLoc,
+                                      SourceLocation EndLoc) {
+  OMPClause *Res = nullptr;
+  switch (Kind) {
+  case OMPC_implements:
+    Res = ActOnOpenMPImplementsClause(Info, StartLoc, LParenLoc, EndLoc);
+    break;
+  default:
+    llvm_unreachable("Clause is not allowed.");
+  }
+  return Res;
+}
+
+OMPClause *Sema::ActOnOpenMPImplementsClause(llvm::StringRef NameInfo,
+                                             SourceLocation StartLoc,
+                                             SourceLocation LParenLoc,
+                                             SourceLocation EndLoc) {
+
+  return new (Context)
+      OMPImplementsClause(StartLoc, LParenLoc, EndLoc, NameInfo);
+}
+
 int Sema::getOpenMPCaptureLevels(OpenMPDirectiveKind DKind) {
   SmallVector<OpenMPDirectiveKind, 4> CaptureRegions;
   getOpenMPCaptureRegions(CaptureRegions, DKind);
@@ -8251,6 +8276,7 @@ OMPClause *Sema::ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind, Expr *Expr,
   case OMPC_hint:
     Res = ActOnOpenMPHintClause(Expr, StartLoc, LParenLoc, EndLoc);
     break;
+  case OMPC_implements:
   case OMPC_if:
   case OMPC_default:
   case OMPC_proc_bind:
@@ -9093,6 +9119,7 @@ OMPClause *Sema::ActOnOpenMPSimpleClause(
         static_cast<OpenMPAtomicDefaultMemOrderClauseKind>(Argument),
         ArgumentLoc, StartLoc, LParenLoc, EndLoc);
     break;
+  case OMPC_implements:
   case OMPC_if:
   case OMPC_final:
   case OMPC_num_threads:
@@ -9270,6 +9297,7 @@ OMPClause *Sema::ActOnOpenMPSingleExprWithArgClause(
         StartLoc, LParenLoc, ArgumentLoc[Modifier], ArgumentLoc[DefaultmapKind],
         EndLoc);
     break;
+  case OMPC_implements:
   case OMPC_final:
   case OMPC_num_threads:
   case OMPC_safelen:
@@ -9489,6 +9517,7 @@ OMPClause *Sema::ActOnOpenMPClause(OpenMPClauseKind Kind,
   case OMPC_dynamic_allocators:
     Res = ActOnOpenMPDynamicAllocatorsClause(StartLoc, EndLoc);
     break;
+  case OMPC_implements:
   case OMPC_if:
   case OMPC_final:
   case OMPC_num_threads:
@@ -9686,6 +9715,7 @@ OMPClause *Sema::ActOnOpenMPVarListClause(
   case OMPC_is_device_ptr:
     Res = ActOnOpenMPIsDevicePtrClause(VarList, StartLoc, LParenLoc, EndLoc);
     break;
+  case OMPC_implements:
   case OMPC_if:
   case OMPC_final:
   case OMPC_num_threads:

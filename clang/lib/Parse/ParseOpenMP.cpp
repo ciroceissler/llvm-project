@@ -1438,6 +1438,14 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
           << getOpenMPClauseName(CKind) << getOpenMPDirectiveName(DKind);
     SkipUntil(tok::comma, tok::annot_pragma_openmp_end, StopBeforeMatch);
     break;
+  case OMPC_implements:
+    if (!FirstClause) {
+      Diag(Tok, diag::err_omp_more_one_clause)
+          << getOpenMPDirectiveName(DKind) << getOpenMPClauseName(CKind) << 0;
+      ErrorFound = true;
+    }
+    Clause = ParseOpenMPAccClause(CKind);
+    break;
   }
   return ErrorFound ? nullptr : Clause;
 }
@@ -2078,3 +2086,36 @@ OMPClause *Parser::ParseOpenMPVarListClause(OpenMPDirectiveKind DKind,
       Data.IsMapTypeImplicit, Data.DepLinMapLoc);
 }
 
+/// \brief Parsing of OpenMP clauses with accelerator.
+///
+///    implements-clause:
+///      'implements' '(' filename ')'
+///
+OMPClause *Parser::ParseOpenMPAccClause(OpenMPClauseKind Kind) {
+  SourceLocation Loc = ConsumeToken();
+
+  // Parse '('.
+  BalancedDelimiterTracker T(*this, tok::l_paren, tok::annot_pragma_openmp_end);
+  if (T.expectAndConsume(diag::err_expected_lparen_after,
+                         getOpenMPClauseName(Kind)))
+    return nullptr;
+
+  std::string filename;
+
+  // Filename
+  do {
+    filename += PP.getSpelling(Tok);
+    ConsumeAnyToken();
+  } while ( Tok.isNot(tok::r_paren) &&
+            Tok.isNot(tok::comma) &&
+            Tok.isNot(tok::annot_pragma_openmp_end) );
+
+  // Parse ')'.
+  T.consumeClose();
+
+  return Actions.ActOnOpenMPAccClause(Kind,
+                                      StringRef(filename),
+                                      Loc,
+                                      T.getOpenLocation(),
+                                      T.getCloseLocation());
+}

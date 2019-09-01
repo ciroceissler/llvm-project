@@ -120,6 +120,8 @@ TargetInfo *AllocateTarget(const llvm::Triple &Triple,
                            const TargetOptions &Opts) {
   llvm::Triple::OSType os = Triple.getOS();
 
+  llvm::Triple TripleAlveo("x86_64");
+
   switch (Triple.getArch()) {
   default:
     return nullptr;
@@ -178,6 +180,9 @@ TargetInfo *AllocateTarget(const llvm::Triple &Triple,
     default:
       return new AArch64beTargetInfo(Triple, Opts);
     }
+
+  case llvm::Triple::alveo:
+    return new X86_64TargetInfo(TripleAlveo, Opts);
 
   case llvm::Triple::arm:
   case llvm::Triple::thumb:

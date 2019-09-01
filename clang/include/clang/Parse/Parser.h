@@ -2861,6 +2861,11 @@ private:
   ///
   OMPClause *ParseOpenMPVarListClause(OpenMPDirectiveKind DKind,
                                       OpenMPClauseKind Kind, bool ParseOnly);
+  /// \brief Parses clause with accelerator args.
+  ///
+  /// \param Kind Kind of current clause.
+  ///
+  OMPClause *ParseOpenMPAccClause(OpenMPClauseKind Kind);
 
 public:
   /// Parses simple expression in parens for single-expression clauses of OpenMP

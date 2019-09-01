@@ -3168,6 +3168,13 @@ bool RecursiveASTVisitor<Derived>::VisitOMPDeviceClause(OMPDeviceClause *C) {
 }
 
 template <typename Derived>
+bool RecursiveASTVisitor<Derived>::VisitOMPImplementsClause(OMPImplementsClause *C) {
+  // TRY_TO(VisitOMPClauseWithPreInit(C));
+  // TRY_TO(TraverseStmt(C->getImplementsNameInfo()));
+  return true;
+}
+
+template <typename Derived>
 bool RecursiveASTVisitor<Derived>::VisitOMPMapClause(OMPMapClause *C) {
   TRY_TO(VisitOMPClauseList(C));
   return true;

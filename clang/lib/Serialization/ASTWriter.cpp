@@ -6498,6 +6498,11 @@ void OMPClauseWriter::VisitOMPIfClause(OMPIfClause *C) {
   Record.AddSourceLocation(C->getLParenLoc());
 }
 
+void OMPClauseWriter::VisitOMPImplementsClause(OMPImplementsClause *C) {
+  Record.AddString(C->getImplementsNameInfo());
+  Record.AddSourceLocation(C->getLParenLoc());
+}
+
 void OMPClauseWriter::VisitOMPFinalClause(OMPFinalClause *C) {
   Record.AddStmt(C->getCondition());
   Record.AddSourceLocation(C->getLParenLoc());

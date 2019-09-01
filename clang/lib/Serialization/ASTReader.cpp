@@ -11793,6 +11793,9 @@ OMPClause *OMPClauseReader::readClause() {
                                   NumComponents);
     break;
   }
+  case OMPC_implements:
+    C = new (Context) OMPImplementsClause();
+    break;
   case OMPC_num_teams:
     C = new (Context) OMPNumTeamsClause();
     break;
@@ -12279,6 +12282,11 @@ void OMPClauseReader::VisitOMPDependClause(OMPDependClause *C) {
 void OMPClauseReader::VisitOMPDeviceClause(OMPDeviceClause *C) {
   VisitOMPClauseWithPreInit(C);
   C->setDevice(Record.readSubExpr());
+  C->setLParenLoc(Record.readSourceLocation());
+}
+
+void OMPClauseReader::VisitOMPImplementsClause(OMPImplementsClause *C) {
+  C->setImplementsNameInfo(Record.readString());
   C->setLParenLoc(Record.readSourceLocation());
 }
 
